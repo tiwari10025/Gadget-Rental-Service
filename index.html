@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gadget Rental Service</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3/dist/web3.min.js"></script>
+  </head>
+  <body>
+    <h1>Gadget Rental Service</h1>
+
+    <div id="account">
+      <button onclick="connectWallet()">Connect Wallet</button>
+      <p id="walletAddress"></p>
+    </div>
+
+    <hr />
+
+    <h3>Available Gadgets</h3>
+    <div id="gadgetsList"></div>
+
+    <hr />
+
+    <h3>Rent a Gadget</h3>
+    <form id="rentForm">
+      <label for="gadgetId">Gadget ID:</label>
+      <input type="number" id="gadgetId" required /><br />
+      <label for="rentalDays">Rental Days:</label>
+      <input type="number" id="rentalDays" required /><br />
+      <button type="submit">Rent Gadget</button>
+    </form>
+
+    <hr />
+
+    <h3>Return a Gadget</h3>
+    <form id="returnForm">
+      <label for="returnGadgetId">Gadget ID:</label>
+      <input type="number" id="returnGadgetId" required /><br />
+      <button type="submit">Return Gadget</button>
+    </form>
+
+    <script>
+      let web3;
+      let contract;
+      let userAccount;
+
+      // Contract ABI and address (replace with your contract's ABI and address)
+      const contractABI = [
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "tokenAddress",
+              type: "address",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "constructor",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "renter",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "gadgetId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "startDate",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "endDate",
+              type: "uint256",
+            },
+          ],
+          name: "GadgetRented",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "renter",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "gadgetId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "refundAmount",
+              type: "uint256",
+            },
+          ],
+          name: "GadgetReturned",
+          type: "event",
+        },
+        {
+          inputs: [
+            {
+              internalType: "string",
+              name: "name",
+              type: "string",
+            },
+            {
+              internalType: "uint256",
+              name: "pricePerDay",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "depositAmount",
+              type: "uint256",
+            },
+          ],
+          name: "addGadget",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "gadgets",
+          outputs: [
+            {
+              internalType: "string",
+              name: "name",
+              type: "string",
+            },
+            {
+              internalType: "uint256",
+              name: "pricePerDay",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "depositAmount",
+              type: "uint256",
+            },
+            {
+              internalType: "bool",
+              name: "isAvailable",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "owner",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "paymentToken",
+          outputs: [
+            {
+              internalType: "contract IToken",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "gadgetId",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "rentalDays",
+              type: "uint256",
+            },
+          ],
+          name: "rentGadget",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "rentalAgreements",
+          outputs: [
+            {
+              internalType: "address",
+              name: "renter",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "startDate",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "endDate",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "depositPaid",
+              type: "uint256",
+            },
+            {
+              internalType: "bool",
+              name: "isReturned",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "gadgetId",
+              type: "uint256",
+            },
+          ],
+          name: "returnGadget",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ];
+
+      const contractAddress = "0x1DFce6161852893c98dF58a642174Fe460D5746F"; // Replace with your deployed contract address
+
+      async function connectWallet() {
+        if (typeof window.ethereum !== "undefined") {
+          web3 = new Web3(window.ethereum);
+          await window.ethereum.request({ method: "eth_requestAccounts" });
+          userAccount = (await web3.eth.getAccounts())[0];
+          document.getElementById(
+            "walletAddress"
+          ).innerText = `Connected account: ${userAccount}`;
+          initializeContract();
+        } else {
+          alert("Please install MetaMask!");
+        }
+      }
+
+      function initializeContract() {
+        contract = new web3.eth.Contract(contractABI, contractAddress);
+        loadGadgets();
+      }
+
+      async function loadGadgets() {
+        const gadgetsList = document.getElementById("gadgetsList");
+        gadgetsList.innerHTML = "";
+        const gadgetCount = await contract.methods.gadgets().call();
+        for (let i = 0; i < gadgetCount; i++) {
+          const gadget = await contract.methods.gadgets(i).call();
+          const gadgetElement = document.createElement("div");
+          gadgetElement.innerHTML = `
+                    <h4>${gadget.name}</h4>
+                    <p>Price Per Day: ${web3.utils.fromWei(
+                      gadget.pricePerDay
+                    )} tokens</p>
+                    <p>Deposit Amount: ${web3.utils.fromWei(
+                      gadget.depositAmount
+                    )} tokens</p>
+                    <p>Available: ${gadget.isAvailable ? "Yes" : "No"}</p>
+                `;
+          gadgetsList.appendChild(gadgetElement);
+        }
+      }
+
+      document
+        .getElementById("rentForm")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const gadgetId = document.getElementById("gadgetId").value;
+          const rentalDays = document.getElementById("rentalDays").value;
+          try {
+            await contract.methods
+              .rentGadget(gadgetId, rentalDays)
+              .send({ from: userAccount });
+            alert("Gadget rented successfully!");
+          } catch (error) {
+            alert("Error renting gadget: " + error.message);
+          }
+        });
+
+      document
+        .getElementById("returnForm")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const returnGadgetId =
+            document.getElementById("returnGadgetId").value;
+          try {
+            await contract.methods
+              .returnGadget(returnGadgetId)
+              .send({ from: userAccount });
+            alert("Gadget returned successfully!");
+          } catch (error) {
+            alert("Error returning gadget: " + error.message);
+          }
+        });
+    </script>
+  </body>
+</html>
